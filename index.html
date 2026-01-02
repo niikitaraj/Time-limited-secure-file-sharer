@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure File Sharer (Supabase)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Import Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans antialiased flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-md">
+        <div id="app-container" class="bg-white dark:bg-gray-800 shadow-2xl rounded-xl overflow-hidden">
+            <div class="bg-green-600 dark:bg-green-700 p-5">
+                <h1 class="text-2xl font-bold text-white text-center">Secure Share</h1>
+                <p class="text-center text-green-100 dark:text-green-200 text-sm mt-1">Powered by Supabase</p>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loading-view" class="p-8 text-center hidden">
+                <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mx-auto mb-4"></div>
+                <p class="text-lg font-semibold">Processing...</p>
+            </div>
+
+            <!-- Sender View -->
+            <div id="sender-view" class="hidden">
+                <form id="upload-form" class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">1. Choose File (Max 50MB)</label>
+                        <input type="file" id="file-input" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer dark:text-gray-400 dark:file:bg-gray-700 dark:file:text-green-300">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">2. Password</label>
+                        <input type="password" id="password-input" placeholder="Not stored on server" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-green-500 focus:border-green-500 shadow-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">3. Expiry</label>
+                        <select id="expiry-select" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm">
+                            <option value="300">5 Minutes</option>
+                            <option value="3600" selected>1 Hour</option>
+                            <option value="86400">1 Day</option>
+                        </select>
+                    </div>
+                    <button type="submit" id="share-btn" class="w-full py-3 px-4 border border-transparent rounded-lg text-white bg-green-600 hover:bg-green-700 font-medium shadow-sm transition duration-150 ease-in-out">Create Secure Link</button>
+                </form>
+
+                <div id="status-area" class="p-6 border-t border-gray-200 dark:border-gray-700 hidden">
+                    <p id="status-message" class="text-center font-medium mb-3"></p>
+                    <div id="link-area" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Share this link:</label>
+                        <div class="flex rounded-lg shadow-sm">
+                            <input type="text" id="share-link" readonly class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-l-lg focus:outline-none text-sm">
+                            <button id="copy-btn" class="px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-r-lg hover:bg-gray-100 dark:hover:bg-gray-600 text-sm font-medium">Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Receiver View -->
+            <div id="receiver-view" class="hidden">
+                <div class="p-6 text-center">
+                    <svg class="w-16 h-16 text-green-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V9a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2z"></path></svg>
+                    <h2 class="text-xl font-bold">File Ready to Download</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Enter the password to decrypt.</p>
+                    <p id="file-name-info" class="text-lg font-semibold mt-4 truncate bg-gray-100 dark:bg-gray-700 p-2 rounded"></p>
+                </div>
+                <form id="download-form" class="p-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
+                     <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                        <input type="password" id="receiver-password-input" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-green-500 focus:border-green-500 shadow-sm">
+                    </div>
+                    <button type="submit" id="download-btn" class="w-full py-3 px-4 rounded-lg text-white bg-green-600 hover:bg-green-700 font-medium shadow-sm transition duration-150 ease-in-out">Download & Decrypt</button>
+                </form>
+                <div id="receiver-status-area" class="p-6 hidden text-center">
+                    <p id="receiver-status-message" class="text-center font-medium"></p>
+                </div>
+            </div>
+
+            <!-- Error View -->
+            <div id="error-view" class="hidden p-8 text-center">
+                <svg class="w-16 h-16 text-red-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <h2 class="text-xl font-bold text-red-600">Link Invalid or Expired</h2>
+                <p id="error-message" class="text-gray-600 dark:text-gray-400 mt-2">This file is no longer available.</p>
+            </div>
+        </div>
+        <p class="text-center text-xs text-gray-500 dark:text-gray-400 mt-4">Secure • Encrypted • Ephemeral</p>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // REPLACE THESE WITH YOUR ACTUAL SUPABASE KEYS
+       
+        const supabaseUrl = ;
+        const supabaseKey = ;
+        
+        // --- CONSTANTS ---
+        
+        const BUCKET_NAME = ; 
+        const TABLE_NAME = ;
+
+        // --- DOM Elements ---
+        const senderView = document.getElementById('sender-view');
+        const receiverView = document.getElementById('receiver-view');
+        const errorView = document.getElementById('error-view');
+        const loadingView = document.getElementById('loading-view');
+        
+        // Sender Inputs
+        const fileInput = document.getElementById('file-input');
+        const passwordInput = document.getElementById('password-input');
+        const expirySelect = document.getElementById('expiry-select');
+        const shareBtn = document.getElementById('share-btn');
+        const shareLink = document.getElementById('share-link');
+        const statusArea = document.getElementById('status-area');
+        const linkArea = document.getElementById('link-area');
+
+        // Receiver Inputs
+        const fileNameInfo = document.getElementById('file-name-info');
+        const receiverPasswordInput = document.getElementById('receiver-password-input');
+        const downloadBtn = document.getElementById('download-btn');
+        const receiverStatusArea = document.getElementById('receiver-status-area');
+        const receiverStatusMessage = document.getElementById('receiver-status-message');
+
+        let fileId = null;
+        let metadata = null;
+        let supabaseClient; // Renamed variable to avoid conflict
+
+        // --- APP LOGIC ---
+
+        async function init() {
+            // 1. Initialize Supabase safely
+            try {
+                if (!supabaseUrl || !supabaseUrl.startsWith('http')) {
+                    throw new Error("Missing Supabase Configuration. Please edit the HTML file.");
+                }
+                // Assign to renamed variable
+                supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+            } catch (e) {
+                console.error("Setup Error:", e);
+                showError("Setup Error", e.message);
+                return;
+            }
+
+            // 2. Routing Logic
+            const params = new URLSearchParams(window.location.search);
+            fileId = params.get('id');
+
+            if (fileId) {
+                await loadReceiverView();
+            } else {
+                senderView.classList.remove('hidden');
+            }
+        }
+
+        // --- CRYPTO FUNCTIONS ---
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            return window.btoa(binary);
+        }
+        function base64ToArrayBuffer(base64) {
+            const binary = window.atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return bytes.buffer;
+        }
+        async function deriveKey(password, salt) {
+            const enc = new TextEncoder();
+            const keyMaterial = await window.crypto.subtle.importKey(
+                'raw', 
+                enc.encode(password), 
+                'PBKDF2', 
+                false, 
+                ['deriveKey']
+            );
+            return window.crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+                keyMaterial, 
+                { name: 'AES-GCM', length: 256 }, 
+                true, 
+                ['encrypt', 'decrypt']
+            );
+        }
+        async function encryptFile(buffer, password) {
+            const salt = window.crypto.getRandomValues(new Uint8Array(16));
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKey(password, salt);
+            
+            const encrypted = await window.crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv: iv }, 
+                key, 
+                buffer
+            );
+            
+            return { 
+                encrypted, 
+                iv: arrayBufferToBase64(iv), 
+                salt: arrayBufferToBase64(salt) 
+            };
+        }
+        async function decryptFile(buffer, password, iv64, salt64) {
+            const key = await deriveKey(password, base64ToArrayBuffer(salt64));
+            return window.crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: base64ToArrayBuffer(iv64) },
+                key, 
+                buffer
+            );
+        }
+
+        // --- ACTIONS ---
+
+        // 1. UPLOAD
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = fileInput.files[0];
+            const password = passwordInput.value;
+            
+            if(!file || !password) return;
+
+            shareBtn.disabled = true;
+            shareBtn.innerText = "Encrypting...";
+
+            try {
+                // Encrypt
+                const buffer = await file.arrayBuffer();
+                const result = await encryptFile(buffer, password);
+
+                shareBtn.innerText = "Uploading...";
+                
+                // Upload
+                const newId = crypto.randomUUID();
+                const storagePath = `${newId}`; 
+                
+                // Use renamed variable
+                const { error: uploadError } = await supabaseClient.storage
+                    .from(BUCKET_NAME)
+                    .upload(storagePath, result.encrypted, {
+                        contentType: 'application/octet-stream',
+                        upsert: false
+                    });
+
+                if (uploadError) throw uploadError;
+
+                // Save Metadata
+                const expirySeconds = parseInt(expirySelect.value);
+                const expiresAt = Date.now() + (expirySeconds * 1000);
+
+                const { error: dbError } = await supabaseClient
+                    .from(TABLE_NAME)
+                    .insert({
+                        id: newId,
+                        file_name: file.name,
+                        storage_path: storagePath,
+                        expires_at: expiresAt,
+                        iv: result.iv,
+                        salt: result.salt
+                    });
+
+                if (dbError) throw dbError;
+
+                // Success
+                const link = `${window.location.origin}${window.location.pathname}?id=${newId}`;
+                shareLink.value = link;
+                statusArea.classList.remove('hidden');
+                linkArea.classList.remove('hidden');
+                document.getElementById('status-message').innerText = "File encrypted & uploaded!";
+                document.getElementById('status-message').className = "text-center font-medium mb-3 text-green-600";
+                shareBtn.innerText = "Done";
+                passwordInput.value = "";
+
+            } catch (err) {
+                console.error(err);
+                alert("Upload failed: " + err.message);
+                shareBtn.disabled = false;
+                shareBtn.innerText = "Create Secure Link";
+            }
+        });
+
+        // 2. CHECK LINK
+        async function loadReceiverView() {
+            loadingView.classList.remove('hidden');
+            senderView.classList.add('hidden');
+            
+            try {
+                // Use renamed variable
+                const { data, error } = await supabaseClient
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .eq('id', fileId)
+                    .single();
+
+                if (error || !data) throw new Error("File not found or access denied.");
+
+                if (Date.now() > data.expires_at) {
+                    await deleteFile(data.storage_path, fileId); 
+                    throw new Error("This link has expired.");
+                }
+
+                metadata = data;
+                fileNameInfo.innerText = data.file_name;
+                loadingView.classList.add('hidden');
+                receiverView.classList.remove('hidden');
+
+            } catch (err) {
+                showError("Link Invalid", err.message);
+            }
+        }
+
+        // 3. DOWNLOAD
+        document.getElementById('download-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = receiverPasswordInput.value;
+            downloadBtn.disabled = true;
+            downloadBtn.innerText = "Downloading...";
+            receiverStatusArea.classList.remove('hidden');
+            receiverStatusMessage.innerText = "Fetching encrypted file...";
+
+            try {
+                // Use renamed variable
+                const { data: blob, error } = await supabaseClient.storage
+                    .from(BUCKET_NAME)
+                    .download(metadata.storage_path);
+
+                if (error) throw error;
+
+                receiverStatusMessage.innerText = "Decrypting...";
+                const buffer = await blob.arrayBuffer();
+                
+                try {
+                    const decrypted = await decryptFile(buffer, password, metadata.iv, metadata.salt);
+                    
+                    const url = URL.createObjectURL(new Blob([decrypted]));
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = metadata.file_name;
+                    document.body.appendChild(a);
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    a.remove();
+                    
+                    receiverStatusMessage.innerText = "Success! Deleting file...";
+                    await deleteFile(metadata.storage_path, fileId);
+                    
+                    receiverView.innerHTML = `
+                        <div class='p-8 text-center'>
+                            <h2 class="text-xl font-bold text-gray-800 dark:text-white">Download Complete</h2>
+                            <p class="text-gray-600 dark:text-gray-400 mt-2">File deleted from server.</p>
+                        </div>`;
+
+                } catch (cryptoErr) {
+                    throw new Error("Incorrect password.");
+                }
+
+            } catch (err) {
+                console.error(err);
+                receiverStatusMessage.innerText = "Error: " + err.message;
+                receiverStatusMessage.className = "text-center font-medium text-red-600";
+                downloadBtn.disabled = false;
+                downloadBtn.innerText = "Download & Decrypt";
+            }
+        });
+
+        async function deleteFile(path, id) {
+            // Use renamed variable
+            await supabaseClient.storage.from(BUCKET_NAME).remove([path]);
+            await supabaseClient.from(TABLE_NAME).delete().eq('id', id);
+        }
+
+        function showError(title, msg) {
+            loadingView.classList.add('hidden');
+            senderView.classList.add('hidden');
+            receiverView.classList.add('hidden');
+            errorView.classList.remove('hidden');
+            errorView.querySelector('h2').innerText = title;
+            document.getElementById('error-message').innerText = msg;
+        }
+
+        document.getElementById('copy-btn').addEventListener('click', () => {
+            shareLink.select();
+            document.execCommand('copy');
+        });
+
+        init();
+    </script>
+</body>
+</html>
